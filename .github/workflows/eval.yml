@@ -1,0 +1,39 @@
+name: agent-eval
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # manual "sign-off" run against the real agent
+
+jobs:
+  offline:
+    name: Checks + regression (offline, no API key)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - run: EVAL_MODE=stub pytest -v
+      - run: python run_all.py --mode stub --no-gate-exit
+
+  live-gate:
+    name: Deploy gate (live Claude agent + judge)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - run: EVAL_MODE=live pytest tests/test_regression.py -v
+      - run: python run_all.py --mode live          # exits 1 if the gate fails
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: |
+            results/
+            calibration/
